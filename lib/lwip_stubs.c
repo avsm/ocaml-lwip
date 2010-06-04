@@ -9,6 +9,11 @@
 #include <caml/signals.h>
 #include <stdio.h>
 
+/* XXX: these are just for lib_test, need to be
+   abstracted out for MirageOS */
+#include <mintapif.h>
+#include <netif/etharp.h>
+
 enum tcp_states
 {
    TCP_NONE = 0,
@@ -147,3 +152,65 @@ caml_tcp_accepted(value v_tw)
     tcp_accepted(Tcp_wrap_val(v_tw)->pcb);
     CAMLreturn(Val_unit);
 }
+
+// NetIF support
+
+#define Netif_wrap_val(x) (*((struct netif **)(Data_custom_val(x))))
+static void
+netif_finalize(value v_netif)
+{
+    struct netif *netif = Netif_wrap_val(v_netif);
+    fprintf(stderr, "netif_finalize\n");
+    free(netif);
+}
+
+CAMLprim
+caml_netif_new(value v_ip, value v_netmask, value v_gw)
+{
+    CAMLparam3(v_ip, v_netmask, v_gw);
+    CAMLlocal1(v_netif);
+    struct ip_addr ip, netmask, gw;
+    struct netif *netif;
+    fprintf(stderr, "caml_netif_new\n");
+
+    IP4_ADDR(&ip, Int_val(Field(v_ip, 0)), Int_val(Field(v_ip, 1)), 
+        Int_val(Field(v_ip, 2)), Int_val(Field(v_ip,3)));
+    IP4_ADDR(&netmask, Int_val(Field(v_netmask, 0)), Int_val(Field(v_netmask, 1)), 
+        Int_val(Field(v_netmask, 2)), Int_val(Field(v_netmask,3)));
+    IP4_ADDR(&gw, Int_val(Field(v_gw, 0)), Int_val(Field(v_gw, 1)), 
+        Int_val(Field(v_gw, 2)), Int_val(Field(v_gw,3)));
+
+    netif = caml_stat_alloc(sizeof(struct netif));
+    netif_add(netif, &ip, &netmask, &gw, NULL, mintapif_init, ethernet_input);
+    v_netif = caml_alloc_final(2, netif_finalize, 1, 100);
+    Netif_wrap_val(v_netif) = netif;
+    
+    CAMLreturn(v_netif);
+}
+
+CAMLprim
+caml_netif_set_default(value v_netif)
+{
+    CAMLparam1(v_netif);
+    fprintf(stderr, "caml_netif_set_default\n");
+    netif_set_default( Netif_wrap_val(v_netif) );
+    CAMLreturn(Val_unit);
+}
+
+CAMLprim
+caml_netif_set_up(value v_netif)
+{
+    CAMLparam1(v_netif);
+    fprintf(stderr, "caml_netif_set_up\n");
+    netif_set_up( Netif_wrap_val(v_netif) );
+    CAMLreturn(Val_unit);
+}
+
+CAMLprim
+caml_netif_select(value v_netif)
+{
+    CAMLparam1(v_netif);
+    int i = mintapif_select( Netif_wrap_val(v_netif) );
+    CAMLreturn(Val_int(i));
+}
+
