@@ -54,6 +54,7 @@
 #include <signal.h>
 
 #include "echo.h"
+void caml_init(void);
 
 /* (manual) host IP configuration */
 static struct ip_addr ipaddr, netmask, gw;
@@ -156,7 +157,7 @@ main(int argc, char **argv)
   netif_set_up(&netif);
 
 
-  echo_init();
+  caml_init();
   
   timer_init();
   timer_set_interval(TIMER_EVT_ETHARPTMR, ARP_TMR_INTERVAL / 10);

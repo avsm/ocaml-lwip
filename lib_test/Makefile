@@ -68,7 +68,7 @@ LWIPFILESW=$(wildcard $(LWIPFILES))
 LWIPOBJS=$(notdir $(LWIPFILESW:.c=.o))
 
 # APPFILES
-APPFILES=echo.c timer.c
+APPFILES=caml.c echo.c timer.c
 
 LWIPLIB=liblwip4.a
 APPLIB=liblwipapps.a
@@ -97,6 +97,6 @@ $(LWIPLIB): $(LWIPOBJS)
 	$(CCDEP) $(CFLAGS) -MM $^ > .depend || rm -f .depend
 
 echop: .depend $(LWIPLIB) $(APPLIB) main.o $(APPFILES)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o echop main.o $(APPLIB) $(LWIPLIB)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o echop main.o $(APPLIB) $(LWIPLIB) ../lib/lwiplib.o ../lib/lwip_stubs.o -L$(shell ocamlc -where) -lm -ldl -lasmrun
 
 
