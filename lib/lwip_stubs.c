@@ -240,3 +240,13 @@ caml_timer_etharp(value v_unit)
     CAMLreturn(Val_unit);
 }
 
+// LWIP core
+
+CAMLprim
+caml_lwip_init(value v_unit)
+{
+    CAMLparam1(v_unit);
+    lwip_init ();
+    CAMLreturn(Val_unit);
+}
+

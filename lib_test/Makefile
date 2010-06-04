@@ -68,17 +68,18 @@ LWIPFILESW=$(wildcard $(LWIPFILES))
 LWIPOBJS=$(notdir $(LWIPFILESW:.c=.o))
 
 # APPFILES
-APPFILES=caml.c echo.c timer.c
+APPFILES=caml.c
 
 LWIPLIB=liblwip4.a
 APPLIB=liblwipapps.a
 APPOBJS=$(notdir $(APPFILES:.c=.o))
 
+.PHONY: all
+all: .depend $(LWIPLIB) $(APPLIB)
+	@ :
+
 %.o:
 	$(CC) $(CFLAGS) -c $(<:.o=.c)
-
-all ipv4 compile: echop
-.PHONY: all
 
 clean:
 	rm -f *.o $(LWIPLIB) $(APPLIB) echop .depend* *.core core
@@ -93,10 +94,8 @@ $(APPLIB): $(APPOBJS)
 $(LWIPLIB): $(LWIPOBJS)
 	$(AR) $(ARFLAGS) $(LWIPLIB) $?
 
-.depend: main.c $(LWIPFILES) $(APPFILES)
+.depend: $(LWIPFILES) $(APPFILES)
 	$(CCDEP) $(CFLAGS) -MM $^ > .depend || rm -f .depend
 
-echop: .depend $(LWIPLIB) $(APPLIB) main.o $(APPFILES)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o echop main.o $(APPLIB) $(LWIPLIB) ../lib/lwiplib.o ../lib/lwip_stubs.o -L$(shell ocamlc -where) -lm -ldl -lasmrun
 
 

@@ -16,3 +16,5 @@ external tcp_accepted: tcp_pcb -> unit = "caml_tcp_accepted"
 external timer_tcp: unit -> unit = "caml_timer_tcp"
 external timer_ip_reass: unit -> unit = "caml_timer_ip_reass"
 external timer_etharp: unit -> unit = "caml_timer_etharp"
+
+external lwip_init: unit -> unit = "caml_lwip_init"

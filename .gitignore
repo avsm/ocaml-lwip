@@ -8,5 +8,5 @@ CVS/
 *.cmi
 *.cmxa
 ._d/
-lib_test/echop
+lib/echop
 lib_test/.depend
