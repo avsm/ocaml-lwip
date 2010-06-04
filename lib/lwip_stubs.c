@@ -214,3 +214,29 @@ caml_netif_select(value v_netif)
     CAMLreturn(Val_int(i));
 }
 
+// Timers
+
+CAMLprim
+caml_timer_tcp(value v_unit)
+{
+    CAMLparam1(v_unit);
+    tcp_tmr();
+    CAMLreturn(Val_unit);
+}
+
+CAMLprim
+caml_timer_ip_reass(value v_unit)
+{
+    CAMLparam1(v_unit);
+    ip_reass_tmr();
+    CAMLreturn(Val_unit);
+}
+
+CAMLprim
+caml_timer_etharp(value v_unit)
+{
+    CAMLparam1(v_unit);
+    etharp_tmr();
+    CAMLreturn(Val_unit);
+}
+
