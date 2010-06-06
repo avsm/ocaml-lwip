@@ -9,16 +9,48 @@ let host_gw = ( 192, 168, 0, 1 )
 
 let g () = Gc.compact()
 
-let accept_fn listen_q pcb =
+let stop_tcp_timer = ref false
+let rec timer_tcp_loop () =
+    lwt () = Lwt_unix.sleep 0.1 in
+    timer_tcp ();
+    if !stop_tcp_timer then return () else
+    timer_tcp_loop ()
+
+let stop_ip_timer = ref false
+let rec timer_ip_loop () = 
+    lwt () = Lwt_unix.sleep 0.2 in
+    timer_ip_reass ();
+    if !stop_ip_timer then return () else
+    timer_ip_loop ()
+
+let stop_etharp_timer = ref false
+let rec timer_etharp_loop () = 
+    lwt () = Lwt_unix.sleep 0.1 in
+    timer_etharp ();
+    if !stop_etharp_timer then return () else
+    timer_etharp_loop ()
+
+let stop_netif_timer = ref false
+let rec netif_select_loop netif =
+    lwt () = Lwt_unix.sleep 0.01 in
+    let _ = netif_select netif in
+    if !stop_netif_timer then return () else
+    netif_select_loop netif
+
+let accept_fn listen_q listen_cond pcb =
     print_endline "accept_fn: start";
     g();
     listen_q := pcb :: !listen_q;
+    Lwt_condition.signal listen_cond ();
     print_endline "accept_fn: done"
 
-let rec listen_forever listen_q pcb connection_fn =
+let rec listen_forever listen_q listen_cond pcb connection_fn =
     (* the listen q gets filled with new connections *)
-    let t,u = Lwt.wait () in
-    lwt x = Lwt.join [ t ] in
+    lwt () = 
+      if List.length !listen_q = 0 then
+        Lwt_condition.wait listen_cond
+    else
+        return () in
     (* woken up as listen_q has more *)
     Printf.printf "listen_forever: woken up: %d\n%!" (List.length !listen_q);
     (* be careful with the listen q here as no locking, so musnt
@@ -32,7 +64,8 @@ let rec listen_forever listen_q pcb connection_fn =
             spawn_threads (t :: acc)
     in
     let accepts = spawn_threads [] in
-    let listener = listen_forever listen_q pcb connection_fn in
+    let listener = listen_forever listen_q listen_cond pcb connection_fn in
+    print_endline "joining";
     Lwt.join (listener :: accepts)
 
 let process_connection pcb =
@@ -57,9 +90,12 @@ let lwip_main () =
     tcp_bind pcb ip 7;
     g();
     let listen_q = ref [] in
-    tcp_listen pcb (accept_fn listen_q);
+    let listen_cond = Lwt_condition.create () in
+    tcp_listen pcb (accept_fn listen_q listen_cond);
     g();
-    listen_forever listen_q pcb process_connection
+    let timers = [ timer_tcp_loop () ; timer_ip_loop (); timer_etharp_loop (); netif_select_loop netif ] in
+    let listener = listen_forever listen_q listen_cond pcb process_connection in
+    Lwt.join (listener :: timers)
 
 let _ = 
     Lwt_main.run (lwip_main ())

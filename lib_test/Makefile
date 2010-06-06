@@ -67,15 +67,10 @@ LWIPFILES=$(COREFILES) $(CORE4FILES) $(NETIFFILES)
 LWIPFILESW=$(wildcard $(LWIPFILES))
 LWIPOBJS=$(notdir $(LWIPFILESW:.c=.o))
 
-# APPFILES
-APPFILES=caml.c
-
 LWIPLIB=liblwip4.a
-APPLIB=liblwipapps.a
-APPOBJS=$(notdir $(APPFILES:.c=.o))
 
 .PHONY: all
-all: .depend $(LWIPLIB) $(APPLIB)
+all: .depend $(LWIPLIB)
 	@ :
 
 %.o:
@@ -87,9 +82,6 @@ clean:
 depend dep: .depend
 
 include .depend
-
-$(APPLIB): $(APPOBJS)
-	$(AR) $(ARFLAGS) $(APPLIB) $?
 
 $(LWIPLIB): $(LWIPOBJS)
 	$(AR) $(ARFLAGS) $(LWIPLIB) $?
