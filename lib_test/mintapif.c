@@ -54,6 +54,10 @@
 #define DEVTAP "/dev/tun0"
 #define IFCONFIG_ARGS "tun0 inet %d.%d.%d.%d link0"
 
+#elif defined(darwin)
+#define DEVTAP "/dev/tap0"
+#define IFCONFIG_ARGS "tap0 inet %d.%d.%d.%d"
+
 #else /* freebsd, cygwin? */
 #define DEVTAP "/dev/tap0"
 #define IFCONFIG_ARGS "tap0 inet %d.%d.%d.%d"

@@ -34,7 +34,7 @@ CC=gcc
 #To compile for linux: make ARCH=linux
 #To compile for cygwin: make ARCH=cygwin
 #To compile for openbsd: make ARCH=openbsd
-ARCH=linux
+ARCH=$(shell uname | tr A-Z a-z)
 CFLAGS=-g -Wall -pedantic -D$(ARCH) -DIPv4 -Os -fpack-struct -DLWIP_DEBUG
 ARFLAGS=rs
 
