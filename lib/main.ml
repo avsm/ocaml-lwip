@@ -37,12 +37,21 @@ let rec netif_select_loop netif =
     if !stop_netif_timer then return () else
     netif_select_loop netif
 
+type tcp_state = {
+    rx_cond: unit Lwt_condition.t;
+    tx_cond: unit Lwt_condition.t;
+    mutable offset: int;
+}
+
 let accept_fn listen_q listen_cond pcb =
     print_endline "accept_fn: start";
     g();
     listen_q := pcb :: !listen_q;
-    Lwt_condition.signal listen_cond ();
-    print_endline "accept_fn: done"
+    tcp_set_state pcb { offset = 0; 
+      rx_cond = Lwt_condition.create();
+      tx_cond = Lwt_condition.create() };
+    print_endline "accept_fn: done";
+    Lwt_condition.signal listen_cond ()
 
 let rec listen_forever listen_q listen_cond pcb connection_fn =
     (* the listen q gets filled with new connections *)
@@ -60,6 +69,7 @@ let rec listen_forever listen_q listen_cond pcb connection_fn =
        | [] -> acc
        | hd :: tl ->
             listen_q := tl;
+            tcp_accepted hd;
             let t = connection_fn hd in
             spawn_threads (t :: acc)
     in

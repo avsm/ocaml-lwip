@@ -17,19 +17,21 @@
 enum tcp_states
 {
    TCP_NONE = 0,
+   TCP_LISTEN,
    TCP_ACCEPTED,
-   TCP_RECEIVED,
    TCP_CLOSING
 };
 
 typedef struct tcp_desc {
-   u8_t state;
-   u8_t retries;
+   u8_t state;        /* TCP state */
+   u8_t retries;      /* */
+   struct pbuf *rx;   /* pbuf receive queue */
+   struct pbuf *tx;   /* pbuf transmit queue */
 } tcp_desc;
 
 typedef struct tcp_wrap {
     struct tcp_pcb *pcb;
-    value v;
+    value v;          /* either accept callback or state record */
     tcp_desc *desc;
 } tcp_wrap;
 
@@ -41,9 +43,11 @@ tcp_wrap_alloc(struct tcp_pcb *pcb)
     fprintf(stderr, "tcp_wrap_alloc\n");
     tcp_wrap *tw = caml_stat_alloc(sizeof(tcp_wrap));
     tw->pcb = pcb;
-    tw->v = Val_unit;
+    tw->v = 0;
     tw->desc = caml_stat_alloc(sizeof(tcp_desc));
     tw->desc->state = TCP_NONE;
+    tw->desc->rx = NULL;
+    tw->desc->tx = NULL;
     tw->desc->retries = 0;
     return tw;
 }
@@ -99,15 +103,52 @@ caml_tcp_bind(value v_tw, value v_ip, value v_port)
     CAMLreturn(Val_unit);
 }
 
+err_t
+tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
+{
+    tcp_wrap *tw = (tcp_wrap *)arg;
+    err_t ret_err;
+    if (p == NULL) {
+        fprintf(stderr, "tcp_recv_cb: p==NULL, state->CLOSING\n");
+        tw->desc->state = TCP_CLOSING;
+        /* TODO: flush rx/tx queues to application */
+        ret_err = ERR_OK;
+    } else if (err != ERR_OK) {
+        fprintf(stderr, "tcp_recv_cb: err != ERR_OK\n");
+        tw->desc->state = TCP_CLOSING;
+        ret_err = ERR_OK;
+    } else {
+        if (tw->desc->rx == NULL) {
+            fprintf(stderr, "tcp_recv_cb: rx first packet\n");
+            tw->desc->rx = p; 
+            /* TODO: notify app */
+            ret_err = ERR_OK;
+        } else if (tw->desc->state == TCP_ACCEPTED) {
+            struct pbuf *ptr;
+            fprintf(stderr, "tcp_recv_cb: rx chaining packet\n");
+            ptr = tw->desc->rx;
+            pbuf_chain(ptr, p);
+            ret_err = ERR_OK;
+        } else if (tw->desc->state == TCP_CLOSING) {
+            fprintf(stderr, "tcp_recv_cb: rx TCP_CLOSING noop\n");
+            ret_err = ERR_OK;
+        } else {
+            fprintf(stderr, "tcp_recv_cb: rx unknown else; state=%d\n", tw->desc->state);
+            ret_err = ERR_OK;
+        }
+    }
+    return ret_err;
+}
+
 err_t 
 tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
 {
     err_t ret_err;
     tcp_wrap *tw;
     tcp_wrap *ltw = (tcp_wrap *)arg;
-    value r, v_tw;
+    value v_state, v_tw;
 
-    fprintf(stderr, "tcp_accept_cb\n");
+    fprintf(stderr, "tcp_accept_cb: ");
 
     tcp_setprio(newpcb, TCP_PRIO_MIN);   
 
@@ -116,10 +157,23 @@ tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
     tw = tcp_wrap_alloc(newpcb);
     tw->desc->state = TCP_ACCEPTED;
     Tcp_wrap_val(v_tw) = tw;
-    
-    r = caml_callback(ltw->v, v_tw);
-
+    tcp_arg(tw->pcb, tw);
+    tcp_recv(newpcb, tcp_recv_cb);
+    fprintf(stderr, "state=%d\n", tw->desc->state); 
+    v_state = caml_callback(ltw->v, v_tw);
     return ERR_OK;
+}
+
+CAMLprim
+caml_tcp_set_state(value v_tw, value v_arg)
+{
+    CAMLparam2(v_tw, v_arg);
+    struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
+    if (tw->v)
+        failwith("caml_tcp_set_state: cannot change tw->v");
+    tw->v = v_arg;
+    caml_register_generational_global_root(&tw->v);
+    return Val_unit;   
 }
 
 CAMLprim
@@ -137,8 +191,8 @@ caml_tcp_listen(value v_tw, value v_accept_cb)
     tw->pcb = new_pcb;  /* tcp_listen will deallocate the old pcb */
     tw->v = v_accept_cb;
     caml_register_generational_global_root(&tw->v);
-    fprintf(stderr, "tcp_arg inc\n");
-    tcp_arg(tw->pcb, tw); /* TODO: not sure if need to reregister, check */
+    tcp_arg(tw->pcb, tw);
+    tw->desc->state = TCP_LISTEN;
     fprintf(stderr, "calling tcp_accept\n");
     tcp_accept(tw->pcb, tcp_accept_cb);
     CAMLreturn(Val_unit);
@@ -148,8 +202,10 @@ CAMLprim
 caml_tcp_accepted(value v_tw)
 {
     CAMLparam1(v_tw);
+    struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
     fprintf(stderr, "caml_tcp_accepted\n");
-    tcp_accepted(Tcp_wrap_val(v_tw)->pcb);
+    tw->desc->state = TCP_ACCEPTED;
+    tcp_accepted(tw->pcb);
     CAMLreturn(Val_unit);
 }
 
