@@ -38,18 +38,24 @@ let rec netif_select_loop netif =
     netif_select_loop netif
 
 type tcp_state = {
+    rx_notify: unit -> unit;
+    tx_notify: unit -> unit;
     rx_cond: unit Lwt_condition.t;
     tx_cond: unit Lwt_condition.t;
-    mutable offset: int;
+    offset: int;
 }
 
 let accept_fn listen_q listen_cond pcb =
     print_endline "accept_fn: start";
     g();
     listen_q := pcb :: !listen_q;
+    let rx_cond = Lwt_condition.create () in
+    let tx_cond = Lwt_condition.create () in
+    let rx_notify () = print_endline "rx_notify"; Lwt_condition.signal rx_cond () in
+    let tx_notify () = print_endline "tx_notify"; Lwt_condition.signal tx_cond () in
     tcp_set_state pcb { offset = 0; 
-      rx_cond = Lwt_condition.create();
-      tx_cond = Lwt_condition.create() };
+      rx_cond = rx_cond; tx_cond = tx_cond;
+      rx_notify = rx_notify; tx_notify = tx_notify };
     print_endline "accept_fn: done";
     Lwt_condition.signal listen_cond ()
 

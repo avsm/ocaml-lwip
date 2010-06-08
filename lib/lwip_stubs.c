@@ -119,9 +119,10 @@ tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
         ret_err = ERR_OK;
     } else {
         if (tw->desc->rx == NULL) {
+            value ret_unit;
             fprintf(stderr, "tcp_recv_cb: rx first packet\n");
             tw->desc->rx = p; 
-            /* TODO: notify app */
+            ret_unit = caml_callback(Field(tw->v, 0), Val_unit);
             ret_err = ERR_OK;
         } else if (tw->desc->state == TCP_ACCEPTED) {
             struct pbuf *ptr;
