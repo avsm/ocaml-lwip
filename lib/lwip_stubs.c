@@ -256,15 +256,18 @@ caml_netif_new(value v_ip, value v_netmask, value v_gw)
 }
 
 /* Copy out all the pbufs in a chain into a string, and ack/free pbuf */
-value 
-caml_string_from_pbuf_chain(struct tcp_wrap *tw, struct pbuf *p)
+CAMLprim
+caml_tcp_read(value v_tw)
 {
-    struct pbuf *x = p;
-    value v_str;
+    CAMLparam1(v_tw);
+    CAMLlocal1(v_str);
+    struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
+    struct pbuf *p = tw->desc->rx, *x = p;
     unsigned char *s;
-    if (!p) {
+    fprintf(stderr, "caml_tcp_rx_read\n");
+    if (!x) {
         v_str = caml_alloc_string(0);
-        return v_str;
+        CAMLreturn(v_str);
     }
     v_str = caml_alloc_string(p->tot_len);
     s = String_val(v_str);
@@ -274,24 +277,12 @@ caml_string_from_pbuf_chain(struct tcp_wrap *tw, struct pbuf *p)
     } while (x = x->next);
     tcp_recved(tw->pcb, p->tot_len);
     pbuf_free(p);
-    return v_str;
-}
-
-CAMLprim
-caml_tcp_rx_read(value v_tw)
-{
-    CAMLparam1(v_tw);
-    CAMLlocal1(v_str);
-    struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
-    
-    fprintf(stderr, "caml_tcp_rx_read\n");
-    v_str = caml_string_from_pbuf_chain(tw, tw->desc->rx);
     tw->desc->rx = NULL;
     CAMLreturn(v_str);   
 }
 
 CAMLprim
-caml_tcp_rx_len(value v_tw)
+caml_tcp_read_len(value v_tw)
 {
     CAMLparam1(v_tw);
     struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
@@ -305,12 +296,34 @@ CAMLprim
 caml_tcp_recved(value v_tw, value v_len)
 {
     CAMLparam2(v_tw, v_len);
-    struct tcp_wrap *tw = Tcp_wrap_val(tw);
+    struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
     fprintf(stderr, "caml_tcp_recved: %d\n", Int_val(v_len));
     tcp_recved(tw->pcb, Int_val(v_len));
     CAMLreturn(Val_unit);
 }
 
+CAMLprim
+caml_tcp_write(value v_tw, value v_buf)
+{
+    CAMLparam2(v_tw, v_buf);
+    struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
+    err_t err;
+
+    err = tcp_write(tw->pcb, String_val(v_buf), caml_string_length(v_buf), 1);
+    if (err == ERR_OK)
+       CAMLreturn(Val_int(caml_string_length(v_buf)));
+    else
+       CAMLreturn(Val_int(-1));
+}
+
+CAMLprim
+caml_tcp_sndbuf(value v_tw)
+{
+    CAMLparam1(v_tw);
+    struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
+    CAMLreturn(Val_int(tcp_sndbuf(tw->pcb)));
+}
+ 
 // Netif
 
 CAMLprim

@@ -87,9 +87,11 @@ let process_connection pcb =
     print_endline "process_connection: start";
     let state = tcp_get_state pcb in
     let rec read_and_echo () = 
-       if tcp_rx_len pcb > 0 then (
-          let buf = tcp_rx_read pcb in
+       if tcp_read_len pcb > 0 then (
+          let buf = tcp_read pcb in
           print_endline ("read_and_echo: " ^ buf);
+          let wr = tcp_write pcb buf in
+          printf "wr=%d\n" wr
        );
        print_endline "process_connection: waiting rx_cond";
        Lwt_condition.wait state.rx_cond >>
