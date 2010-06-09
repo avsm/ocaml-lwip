@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2010 Anil Madhavapeddy <anil@recoil.org>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
 #include <lwip/api.h>
 #include <lwip/tcp.h>
 
@@ -82,7 +98,6 @@ caml_tcp_new(value v_unit)
     Tcp_wrap_val(v_tw) = NULL;
     tw = tcp_wrap_alloc(pcb);
     Tcp_wrap_val(v_tw) = tw;
- 
     CAMLreturn(v_tw);
 }
 
@@ -141,6 +156,25 @@ tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
     return ret_err;
 }
 
+err_t
+tcp_sent_cb(void *arg, struct tcp_pcb *pcb, u16_t len)
+{
+    tcp_wrap *tw = (tcp_wrap *)arg;
+    err_t ret_err;
+
+    if (len > 0) {
+        /* No error, so just notify the application that the send
+           succeeded and wake up any blocked listeners */
+        value v_unit;
+        v_unit = caml_callback(Field(tw->v, 1), Val_unit);
+        ret_err = ERR_OK;
+    } else {
+        /* XXX write error. do something interesting */
+        ret_err = ERR_MEM;
+    }
+    return ret_err;
+}
+
 err_t 
 tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
 {
@@ -152,6 +186,7 @@ tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
     fprintf(stderr, "tcp_accept_cb: ");
 
     tcp_setprio(newpcb, TCP_PRIO_MIN);   
+    fprintf(stderr, "tcp snd buf = %d CONST=%d\n", tcp_sndbuf(newpcb), TCP_SND_BUF);
 
     v_tw = caml_alloc_final(2, tcp_wrap_finalize, 1, 100);
     Tcp_wrap_val(v_tw) = NULL;
@@ -160,6 +195,7 @@ tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
     Tcp_wrap_val(v_tw) = tw;
     tcp_arg(tw->pcb, tw);
     tcp_recv(newpcb, tcp_recv_cb);
+    tcp_sent(newpcb, tcp_sent_cb);
     fprintf(stderr, "state=%d\n", tw->desc->state); 
     v_state = caml_callback(ltw->v, v_tw);
     return ERR_OK;
@@ -303,13 +339,14 @@ caml_tcp_recved(value v_tw, value v_len)
 }
 
 CAMLprim
-caml_tcp_write(value v_tw, value v_buf)
+caml_tcp_write(value v_tw, value v_buf, value v_off, value v_len)
 {
-    CAMLparam2(v_tw, v_buf);
+    CAMLparam4(v_tw, v_buf, v_off, v_len);
     struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
     err_t err;
-
-    err = tcp_write(tw->pcb, String_val(v_buf), caml_string_length(v_buf), 1);
+    /* XXX no bounds checks on off, len */
+    fprintf(stderr, "tcp_write: off=%d len=%d\n", Int_val(v_off), Int_val(v_len));
+    err = tcp_write(tw->pcb, String_val(v_buf)+Int_val(v_off), Int_val(v_len), 1);
     if (err == ERR_OK)
        CAMLreturn(Val_int(caml_string_length(v_buf)));
     else
