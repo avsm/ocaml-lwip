@@ -18,14 +18,14 @@ let rec timer_tcp_loop () =
 
 let stop_ip_timer = ref false
 let rec timer_ip_loop () = 
-    lwt () = Lwt_unix.sleep 0.2 in
+    lwt () = Lwt_unix.sleep 1. in
     timer_ip_reass ();
     if !stop_ip_timer then return () else
     timer_ip_loop ()
 
 let stop_etharp_timer = ref false
 let rec timer_etharp_loop () = 
-    lwt () = Lwt_unix.sleep 0.1 in
+    lwt () = Lwt_unix.sleep 5. in
     timer_etharp ();
     if !stop_etharp_timer then return () else
     timer_etharp_loop ()
