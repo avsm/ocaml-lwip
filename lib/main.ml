@@ -42,7 +42,6 @@ type tcp_state = {
     tx_notify: unit -> unit;
     rx_cond: unit Lwt_condition.t;
     tx_cond: unit Lwt_condition.t;
-    offset: int;
 }
 
 let accept_fn listen_q listen_cond pcb =
@@ -53,7 +52,7 @@ let accept_fn listen_q listen_cond pcb =
     let tx_cond = Lwt_condition.create () in
     let rx_notify () = print_endline "rx_notify"; Lwt_condition.signal rx_cond () in
     let tx_notify () = print_endline "tx_notify"; Lwt_condition.signal tx_cond () in
-    tcp_set_state pcb { offset = 0; 
+    tcp_set_state pcb { 
       rx_cond = rx_cond; tx_cond = tx_cond;
       rx_notify = rx_notify; tx_notify = tx_notify };
     print_endline "accept_fn: done";
@@ -86,9 +85,17 @@ let rec listen_forever listen_q listen_cond pcb connection_fn =
 
 let process_connection pcb =
     print_endline "process_connection: start";
-    lwt x = Lwt_unix.sleep 4. in
-    print_endline "process_connection: end";
-    return ()
+    let state = tcp_get_state pcb in
+    let rec read_and_echo () = 
+       if tcp_rx_len pcb > 0 then (
+          let buf = tcp_rx_read pcb in
+          print_endline ("read_and_echo: " ^ buf);
+       );
+       print_endline "process_connection: waiting rx_cond";
+       Lwt_condition.wait state.rx_cond >>
+       read_and_echo ()
+    in
+    read_and_echo ()
     
 let lwip_main () =
     print_endline "lwip_main in ocaml: start";
