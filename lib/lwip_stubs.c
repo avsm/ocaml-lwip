@@ -33,15 +33,7 @@
 #include <caml/signals.h>
 #include <caml/callback.h>
 
-#undef LWIP_STUBS_DEBUG
-#ifdef LWIP_STUBS_DEBUG
 #include <stdio.h>
-#define LWIP_STUB_DPRINTF(x) fprintf(stderr, "%s\n", (x))
-#define LWIP_STUB_DPRINTF1(x,y) fprintf(stderr, (x "\n"), (y))
-#else
-#define LWIP_STUB_DPRINTF1(x,y)
-#define LWIP_STUB_DPRINTF(x)
-#endif
 
 /* XXX: these are just for lib_test, need to be
    abstracted out for MirageOS */
@@ -120,7 +112,7 @@ pbuf_list_length(pbuf_list *pl)
 static tcp_wrap *
 tcp_wrap_alloc(struct tcp_pcb *pcb)
 {
-    LWIP_STUB_DPRINTF("tcp_wrap_alloc");
+    fprintf(stderr, "tcp_wrap_alloc\n");
     tcp_wrap *tw = caml_stat_alloc(sizeof(tcp_wrap));
     tw->pcb = pcb;
     tw->v = 0;
@@ -134,7 +126,7 @@ tcp_wrap_alloc(struct tcp_pcb *pcb)
 static void
 tcp_wrap_finalize(value v_tw)
 {
-    LWIP_STUB_DPRINTF("tcp_wrap_finalize");
+    fprintf(stderr, "tcp_wrap_finalize\n");
     tcp_wrap *tw = Tcp_wrap_val(v_tw);
     if (tw->pcb) {
         tcp_close(tw->pcb);
@@ -152,7 +144,7 @@ caml_tcp_new(value v_unit)
 {
     CAMLparam1(v_unit);
     CAMLlocal1(v_tw);
-    LWIP_STUB_DPRINTF("tcp_new");
+    fprintf(stderr, "tcp_new\n");
     tcp_wrap *tw;
     struct tcp_pcb *pcb = tcp_new();
     if (pcb == NULL)
@@ -171,7 +163,7 @@ caml_tcp_bind(value v_tw, value v_ip, value v_port)
     struct ip_addr ip;
     u16_t port = Int_val(v_port);
     err_t e;
-    LWIP_STUB_DPRINTF("cam_tcp_bind");
+    fprintf(stderr, "cam_tcp_bind\n");
     tcp_wrap *tw = Tcp_wrap_val(v_tw);
     IP4_ADDR(&ip, Int_val(Field(v_ip, 0)), Int_val(Field(v_ip, 1)), 
         Int_val(Field(v_ip, 2)), Int_val(Field(v_ip,3)));
@@ -188,7 +180,7 @@ tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
     value v_unit;
     err_t ret_err;
     if (p == NULL || err != ERR_OK) {
-        LWIP_STUB_DPRINTF("tcp_recv_cb: p==NULL || err!=ERR_OK state->CLOSING");
+        fprintf(stderr, "tcp_recv_cb: p==NULL || err!=ERR_OK state->CLOSING\n");
         tw->desc->state = TCP_CLOSING;
         /* Wake up any listeners, which will get a read error once the
            pending receive queue has been handled by the application */
@@ -196,14 +188,14 @@ tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
         ret_err = ERR_OK;
     } else {
         if (tw->desc->rx == NULL) {
-            LWIP_STUB_DPRINTF("tcp_recv_cb: rx first packet");
+            fprintf(stderr, "tcp_recv_cb: rx first packet\n");
             tw->desc->rx = pbuf_list_alloc(p);
             v_unit = caml_callback(Field(tw->v, 0), Val_unit);
             ret_err = ERR_OK;
         } else if (tw->desc->state == TCP_ACCEPTED) {
             /* Should be no need to wake up listeners here as nothing
                can sleep if there are already pending packets in rx queue */
-            LWIP_STUB_DPRINTF("tcp_recv_cb: rx chaining packet");
+            fprintf(stderr, "tcp_recv_cb: rx chaining packet\n");
             pbuf_list_append(tw->desc->rx, p);
             ret_err = ERR_OK;
         } else if (tw->desc->state == TCP_CLOSING) {
@@ -212,7 +204,7 @@ tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
             pbuf_free(p);
             ret_err = ERR_OK;
         } else {
-            LWIP_STUB_DPRINTF1("tcp_recv_cb: rx unknown else; state=%d", tw->desc->state);
+            fprintf(stderr, "tcp_recv_cb: rx unknown else; state=%d\n", tw->desc->state);
             tcp_recved(pcb, p->tot_len);
             pbuf_free(p);
             ret_err = ERR_OK;
@@ -228,7 +220,7 @@ tcp_sent_cb(void *arg, struct tcp_pcb *pcb, u16_t len)
     err_t ret_err;
 
     if (len > 0) {
-        LWIP_STUB_DPRINTF1("tcp_sent_cb: ack len=%d", len);
+        fprintf(stderr, "tcp_sent_cb: ack len=%d\n", len);
         /* No error, so just notify the application that the send
            succeeded and wake up any blocked listeners */
         value v_unit;
@@ -236,7 +228,7 @@ tcp_sent_cb(void *arg, struct tcp_pcb *pcb, u16_t len)
         ret_err = ERR_OK;
     } else {
         /* XXX write error. do something interesting */
-        LWIP_STUB_DPRINTF("tcp_sent_cb: write error");
+        fprintf(stderr, "tcp_sent_cb: write error\n");
         ret_err = ERR_MEM;
     }
     return ret_err;
@@ -291,18 +283,20 @@ CAMLprim
 caml_tcp_listen(value v_tw, value v_accept_cb)
 {
     CAMLparam2(v_tw, v_accept_cb);
-    LWIP_STUB_DPRINTF("caml_tcp_listen");
+    fprintf(stderr, "caml_tcp_listen\n");
     tcp_wrap *tw = Tcp_wrap_val(v_tw);
     struct tcp_pcb *new_pcb;
     new_pcb = tcp_listen(tw->pcb);
     if (new_pcb == NULL)
         caml_failwith("tcp_listen: unable to listen");
+    fprintf(stderr, "tcp_listen called\n");
     /* XXX realloc a new tcp pcb wrapper so we can construct tcp_listen_pcb in ocaml */
     tw->pcb = new_pcb;  /* tcp_listen will deallocate the old pcb */
     tw->v = v_accept_cb;
     caml_register_generational_global_root(&tw->v);
     tcp_arg(tw->pcb, &tw->v);
     tw->desc->state = TCP_LISTEN;
+    fprintf(stderr, "calling tcp_accept\n");
     tcp_accept(tw->pcb, tcp_accept_cb);
     CAMLreturn(Val_unit);
 }
@@ -312,7 +306,7 @@ caml_tcp_accepted(value v_tw)
 {
     CAMLparam1(v_tw);
     struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
-    LWIP_STUB_DPRINTF("caml_tcp_accepted");
+    fprintf(stderr, "caml_tcp_accepted\n");
     tw->desc->state = TCP_ACCEPTED;
     tcp_accepted(tw->pcb);
     CAMLreturn(Val_unit);
@@ -325,7 +319,7 @@ static void
 netif_finalize(value v_netif)
 {
     struct netif *netif = Netif_wrap_val(v_netif);
-    LWIP_STUB_DPRINTF("netif_finalize");
+    fprintf(stderr, "netif_finalize\n");
     free(netif);
 }
 
@@ -336,7 +330,7 @@ caml_netif_new(value v_ip, value v_netmask, value v_gw)
     CAMLlocal1(v_netif);
     struct ip_addr ip, netmask, gw;
     struct netif *netif;
-    LWIP_STUB_DPRINTF("caml_netif_new");
+    fprintf(stderr, "caml_netif_new\n");
 
     IP4_ADDR(&ip, Int_val(Field(v_ip, 0)), Int_val(Field(v_ip, 1)), 
         Int_val(Field(v_ip, 2)), Int_val(Field(v_ip,3)));
@@ -364,7 +358,7 @@ caml_tcp_read(value v_tw)
     struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
     struct pbuf_list *pl = tw->desc->rx;
 
-    LWIP_STUB_DPRINTF("caml_tcp_rx_read");
+    fprintf(stderr, "caml_tcp_rx_read\n");
     if (!pl) {
         v_str = caml_alloc_string(0);
         CAMLreturn(v_str);
@@ -403,7 +397,7 @@ caml_tcp_recved(value v_tw, value v_len)
 {
     CAMLparam2(v_tw, v_len);
     struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
-    LWIP_STUB_DPRINTF1("caml_tcp_recved: %d", Int_val(v_len));
+    fprintf(stderr, "caml_tcp_recved: %d\n", Int_val(v_len));
     tcp_recved(tw->pcb, Int_val(v_len));
     CAMLreturn(Val_unit);
 }
@@ -416,7 +410,7 @@ caml_tcp_write(value v_tw, value v_buf, value v_off, value v_len)
     err_t err;
     /* XXX no bounds checks on off, len */
     err = tcp_write(tw->pcb, String_val(v_buf)+Int_val(v_off), Int_val(v_len), 1);
-    LWIP_STUB_DPRINTF1("tcp_write: err=%d", err);
+    fprintf(stderr, "tcp_write: off=%d len=%d err=%d\n", Int_val(v_off), Int_val(v_len),err);
     if (err == ERR_OK)
        CAMLreturn(v_len);
     else
@@ -437,6 +431,7 @@ CAMLprim
 caml_netif_set_default(value v_netif)
 {
     CAMLparam1(v_netif);
+    fprintf(stderr, "caml_netif_set_default\n");
     netif_set_default( Netif_wrap_val(v_netif) );
     CAMLreturn(Val_unit);
 }
@@ -445,6 +440,7 @@ CAMLprim
 caml_netif_set_up(value v_netif)
 {
     CAMLparam1(v_netif);
+    fprintf(stderr, "caml_netif_set_up\n");
     netif_set_up( Netif_wrap_val(v_netif) );
     CAMLreturn(Val_unit);
 }
