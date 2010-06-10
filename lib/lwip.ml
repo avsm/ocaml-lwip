@@ -118,7 +118,6 @@ module TCP = struct
     }
 
     let accept_cb listen_q listen_cond pcb =
-        print_endline "accept_fn: start";
         listen_q := pcb :: !listen_q;
         let rx_cond = Lwt_condition.create () in
         let tx_cond = Lwt_condition.create () in
@@ -136,8 +135,6 @@ module TCP = struct
             Lwt_condition.wait listen_cond
         else
             return () in
-        (* woken up as listen_q has more *)
-        Printf.printf "listen_forever: woken up: %d\n%!" (List.length !listen_q);
         (* be careful with the listen q here as no locking, so musnt
            call into lwip too early, with connection_fn will likely do *)
         let rec spawn_threads acc =
@@ -177,38 +174,30 @@ module TCP = struct
          |  0 -> 
              let state = tcp_get_state pcb in
              lwt () = Lwt_condition.wait state.rx_cond in
-             print_endline "read woken up";
              read pcb
          |  n -> return (tcp_read pcb)
 
      let rec internal_write pcb buf off len acc =
          let sndbuf = tcp_sndbuf pcb in
-         Printf.printf "internal_write: off=%d len=%d sndbuf=%d\n%!" off len sndbuf;
          let state = tcp_get_state pcb in
          if len > sndbuf then (
              match tcp_write pcb buf off sndbuf with
              | -1 -> 
-                  Printf.printf "internal_write: error\n%!";
                   Lwt_condition.wait state.tx_cond >>
                   internal_write pcb buf off len acc
              | written ->
                   (* wait for a write ack, then continue writing *)
-                  Printf.printf "written: %d\n%!" written;
                   Lwt_condition.wait state.tx_cond >>
                   internal_write pcb buf (off+written) (len-written) (acc+written)
          ) else (
              match tcp_write pcb buf off len with
              | -1 -> 
-                  Printf.printf "internal_write: error\n%!";
                   Lwt_condition.wait state.tx_cond >>
                   internal_write pcb buf off len acc
              | written -> return (acc+written)
          )         
         
      let write pcb buf = 
-         Printf.printf "write: buf len=%d\n" (String.length buf);
-         lwt r = internal_write pcb buf 0 (String.length buf) 0 in
-         Printf.printf "write: done\n%!";
-         return r
+         internal_write pcb buf 0 (String.length buf) 0
         
 end
