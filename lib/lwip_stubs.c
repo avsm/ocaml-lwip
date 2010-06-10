@@ -48,10 +48,15 @@ enum tcp_states
    TCP_CLOSING
 };
 
+typedef struct pbuf_list {
+   struct pbuf *p;
+   struct pbuf_list *next;
+} pbuf_list;
+
 typedef struct tcp_desc {
    u8_t state;        /* TCP state */
    u8_t retries;      /* */
-   struct pbuf *rx;   /* pbuf receive queue */
+   pbuf_list *rx;   /* pbuf receive queue */
 } tcp_desc;
 
 typedef struct tcp_wrap {
@@ -61,6 +66,48 @@ typedef struct tcp_wrap {
 } tcp_wrap;
 
 #define Tcp_wrap_val(x) (*((tcp_wrap **)(Data_custom_val(x))))
+
+static pbuf_list *
+pbuf_list_alloc(struct pbuf *p)
+{
+    pbuf_list *pl;
+    pl = caml_stat_alloc(sizeof(pbuf_list));
+    pl->next = NULL;
+    pl->p = p;
+    return pl;
+}
+
+static void
+pbuf_list_append(pbuf_list *hd, struct pbuf *p)
+{
+    pbuf_list *tl = hd;
+    while (tl->next) tl=tl->next;
+    tl->next = pbuf_list_alloc(p);
+}
+
+static void
+pbuf_list_free(pbuf_list *pl)
+{
+    struct pbuf_list *pl2;
+    do {
+        pbuf_free(pl->p);
+        pl2 = pl->next;
+        caml_stat_free(pl);
+        pl = pl2;
+    } while (pl != NULL);
+}
+
+static unsigned int
+pbuf_list_length(pbuf_list *pl)
+{
+    unsigned int len = 0;
+    struct pbuf_list *pliter = pl;
+    do {
+        len += pliter->p->tot_len;
+        pliter = pliter->next;
+    } while (pliter);
+    return len;
+}
 
 static tcp_wrap *
 tcp_wrap_alloc(struct tcp_pcb *pcb)
@@ -142,16 +189,14 @@ tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
     } else {
         if (tw->desc->rx == NULL) {
             fprintf(stderr, "tcp_recv_cb: rx first packet\n");
-            tw->desc->rx = p; 
+            tw->desc->rx = pbuf_list_alloc(p);
             v_unit = caml_callback(Field(tw->v, 0), Val_unit);
             ret_err = ERR_OK;
         } else if (tw->desc->state == TCP_ACCEPTED) {
-            struct pbuf *ptr;
             /* Should be no need to wake up listeners here as nothing
                can sleep if there are already pending packets in rx queue */
             fprintf(stderr, "tcp_recv_cb: rx chaining packet\n");
-            ptr = tw->desc->rx;
-            pbuf_chain(ptr, p);
+            pbuf_list_append(tw->desc->rx, p);
             ret_err = ERR_OK;
         } else if (tw->desc->state == TCP_CLOSING) {
             /* Remote side closing twice, trash the data */
@@ -311,21 +356,23 @@ caml_tcp_read(value v_tw)
     CAMLparam1(v_tw);
     CAMLlocal1(v_str);
     struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
-    struct pbuf *p = tw->desc->rx, *x = p;
-    unsigned char *s;
+    struct pbuf_list *pl = tw->desc->rx;
+
     fprintf(stderr, "caml_tcp_rx_read\n");
-    if (!x) {
+    if (!pl) {
         v_str = caml_alloc_string(0);
         CAMLreturn(v_str);
     }
-    v_str = caml_alloc_string(p->tot_len);
-    s = String_val(v_str);
+
+    unsigned int tot_len = pbuf_list_length(pl);
+    v_str = caml_alloc_string(tot_len);
+    unsigned char *s = String_val(v_str);
     do {
-        memcpy(s, x->payload, x->len);
-        s += x->len;
-    } while (x = x->next);
-    tcp_recved(tw->pcb, p->tot_len);
-    pbuf_free(p);
+        pbuf_copy_partial(pl->p, s, pl->p->tot_len, 0);
+        s += pl->p->tot_len;
+    } while (pl = pl->next);
+    tcp_recved(tw->pcb, tot_len);
+    pbuf_list_free(tw->desc->rx);
     tw->desc->rx = NULL;
     CAMLreturn(v_str);   
 }
@@ -336,7 +383,7 @@ caml_tcp_read_len(value v_tw)
     CAMLparam1(v_tw);
     struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
     if (tw->desc->rx)
-        CAMLreturn(Val_int(tw->desc->rx->tot_len));
+        CAMLreturn(Val_int(pbuf_list_length(tw->desc->rx)));
     else {
         if (tw->desc->state == TCP_CLOSING)
             CAMLreturn(Val_int(-1));
