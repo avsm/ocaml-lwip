@@ -120,34 +120,38 @@ err_t
 tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 {
     tcp_wrap *tw = (tcp_wrap *)arg;
+    value v_unit;
     err_t ret_err;
-    if (p == NULL) {
-        fprintf(stderr, "tcp_recv_cb: p==NULL, state->CLOSING\n");
+    if (p == NULL || err != ERR_OK) {
+        fprintf(stderr, "tcp_recv_cb: p==NULL || err!=ERR_OK state->CLOSING\n");
         tw->desc->state = TCP_CLOSING;
-        /* TODO: flush rx/tx queues to application */
-        ret_err = ERR_OK;
-    } else if (err != ERR_OK) {
-        fprintf(stderr, "tcp_recv_cb: err != ERR_OK\n");
-        tw->desc->state = TCP_CLOSING;
+        /* Wake up any listeners, which will get a read error once the
+           pending receive queue has been handled by the application */
+        v_unit = caml_callback(Field(tw->v, 0), Val_unit);
         ret_err = ERR_OK;
     } else {
         if (tw->desc->rx == NULL) {
-            value ret_unit;
             fprintf(stderr, "tcp_recv_cb: rx first packet\n");
             tw->desc->rx = p; 
-            ret_unit = caml_callback(Field(tw->v, 0), Val_unit);
+            v_unit = caml_callback(Field(tw->v, 0), Val_unit);
             ret_err = ERR_OK;
         } else if (tw->desc->state == TCP_ACCEPTED) {
             struct pbuf *ptr;
+            /* Should be no need to wake up listeners here as nothing
+               can sleep if there are already pending packets in rx queue */
             fprintf(stderr, "tcp_recv_cb: rx chaining packet\n");
             ptr = tw->desc->rx;
             pbuf_chain(ptr, p);
             ret_err = ERR_OK;
         } else if (tw->desc->state == TCP_CLOSING) {
-            fprintf(stderr, "tcp_recv_cb: rx TCP_CLOSING noop\n");
+            /* Remote side closing twice, trash the data */
+            tcp_recved(pcb, p->tot_len);
+            pbuf_free(p);
             ret_err = ERR_OK;
         } else {
             fprintf(stderr, "tcp_recv_cb: rx unknown else; state=%d\n", tw->desc->state);
+            tcp_recved(pcb, p->tot_len);
+            pbuf_free(p);
             ret_err = ERR_OK;
         }
     }
@@ -289,7 +293,9 @@ caml_netif_new(value v_ip, value v_netmask, value v_gw)
     CAMLreturn(v_netif);
 }
 
-/* Copy out all the pbufs in a chain into a string, and ack/free pbuf */
+/* Copy out all the pbufs in a chain into a string, and ack/free pbuf 
+ * @return 0: nothing, -1: closed connection, +n: bytes read
+ */
 CAMLprim
 caml_tcp_read(value v_tw)
 {
@@ -300,7 +306,10 @@ caml_tcp_read(value v_tw)
     unsigned char *s;
     fprintf(stderr, "caml_tcp_rx_read\n");
     if (!x) {
-        v_str = caml_alloc_string(0);
+        if (tw->desc->state == TCP_CLOSING)
+            v_str = caml_alloc_string(-1);
+        else
+            v_str = caml_alloc_string(0);
         CAMLreturn(v_str);
     }
     v_str = caml_alloc_string(p->tot_len);
