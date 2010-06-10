@@ -14,7 +14,15 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include <lwip/api.h>
+#include <lwip/init.h>
+#include <lwip/debug.h>
+#include <lwip/mem.h>
+#include <lwip/memp.h>
+#include <lwip/sys.h>
+#include <lwip/stats.h>
+#include <lwip/ip.h>
+#include <lwip/ip_frag.h>
+#include <lwip/udp.h>
 #include <lwip/tcp.h>
 
 #include <caml/mlvalues.h>
@@ -23,6 +31,7 @@
 #include <caml/alloc.h>
 #include <caml/custom.h>
 #include <caml/signals.h>
+
 #include <stdio.h>
 
 /* XXX: these are just for lib_test, need to be
@@ -182,13 +191,10 @@ tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
 {
     err_t ret_err;
     tcp_wrap *tw;
-    tcp_wrap *ltw = (tcp_wrap *)arg;
+    value *cb = (value *)arg;
     value v_state, v_tw;
 
-    fprintf(stderr, "tcp_accept_cb: ");
-
     tcp_setprio(newpcb, TCP_PRIO_MIN);   
-    fprintf(stderr, "tcp snd buf = %d CONST=%d\n", tcp_sndbuf(newpcb), TCP_SND_BUF);
 
     v_tw = caml_alloc_final(2, tcp_wrap_finalize, 1, 100);
     Tcp_wrap_val(v_tw) = NULL;
@@ -198,8 +204,8 @@ tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
     tcp_arg(tw->pcb, tw);
     tcp_recv(newpcb, tcp_recv_cb);
     tcp_sent(newpcb, tcp_sent_cb);
-    fprintf(stderr, "state=%d\n", tw->desc->state); 
-    v_state = caml_callback(ltw->v, v_tw);
+
+    v_state = caml_callback(*cb, v_tw);
     return ERR_OK;
 }
 
@@ -240,7 +246,7 @@ caml_tcp_listen(value v_tw, value v_accept_cb)
     tw->pcb = new_pcb;  /* tcp_listen will deallocate the old pcb */
     tw->v = v_accept_cb;
     caml_register_generational_global_root(&tw->v);
-    tcp_arg(tw->pcb, tw);
+    tcp_arg(tw->pcb, &tw->v);
     tw->desc->state = TCP_LISTEN;
     fprintf(stderr, "calling tcp_accept\n");
     tcp_accept(tw->pcb, tcp_accept_cb);
@@ -365,7 +371,7 @@ caml_tcp_sndbuf(value v_tw)
 {
     CAMLparam1(v_tw);
     struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
-    CAMLreturn(Val_int(tcp_sndbuf(tw->pcb)));
+    CAMLreturn(Val_int(tw->pcb->snd_buf));
 }
  
 // Netif
