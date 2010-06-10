@@ -181,20 +181,31 @@ module TCP = struct
      let rec internal_write pcb buf off len acc =
          let sndbuf = tcp_sndbuf pcb in
          Printf.printf "internal_write: off=%d len=%d sndbuf=%d\n%!" off len sndbuf;
+         let state = tcp_get_state pcb in
          if len > sndbuf then (
              match tcp_write pcb buf off sndbuf with
-             | -1 -> return acc
+             | -1 -> 
+                  Printf.printf "internal_write: error\n%!";
+                  Lwt_condition.wait state.tx_cond >>
+                  internal_write pcb buf off len acc
              | written ->
                   (* wait for a write ack, then continue writing *)
-                  let state = tcp_get_state pcb in
+                  Printf.printf "written: %d\n%!" written;
                   Lwt_condition.wait state.tx_cond >>
                   internal_write pcb buf (off+written) (len-written) (acc+written)
          ) else (
              match tcp_write pcb buf off len with
-             | -1 -> return acc
+             | -1 -> 
+                  Printf.printf "internal_write: error\n%!";
+                  Lwt_condition.wait state.tx_cond >>
+                  internal_write pcb buf off len acc
              | written -> return (acc+written)
          )         
         
      let write pcb buf = 
-         internal_write pcb buf 0 (String.length buf) 0
+         Printf.printf "write: buf len=%d\n" (String.length buf);
+         lwt r = internal_write pcb buf 0 (String.length buf) 0 in
+         Printf.printf "write: done\n%!";
+         return r
+        
 end

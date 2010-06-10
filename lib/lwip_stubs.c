@@ -174,6 +174,7 @@ tcp_sent_cb(void *arg, struct tcp_pcb *pcb, u16_t len)
     err_t ret_err;
 
     if (len > 0) {
+        fprintf(stderr, "tcp_sent_cb: ack len=%d\n", len);
         /* No error, so just notify the application that the send
            succeeded and wake up any blocked listeners */
         value v_unit;
@@ -181,6 +182,7 @@ tcp_sent_cb(void *arg, struct tcp_pcb *pcb, u16_t len)
         ret_err = ERR_OK;
     } else {
         /* XXX write error. do something interesting */
+        fprintf(stderr, "tcp_sent_cb: write error\n");
         ret_err = ERR_MEM;
     }
     return ret_err;
@@ -358,10 +360,10 @@ caml_tcp_write(value v_tw, value v_buf, value v_off, value v_len)
     struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
     err_t err;
     /* XXX no bounds checks on off, len */
-    fprintf(stderr, "tcp_write: off=%d len=%d\n", Int_val(v_off), Int_val(v_len));
     err = tcp_write(tw->pcb, String_val(v_buf)+Int_val(v_off), Int_val(v_len), 1);
+    fprintf(stderr, "tcp_write: off=%d len=%d err=%d\n", Int_val(v_off), Int_val(v_len),err);
     if (err == ERR_OK)
-       CAMLreturn(Val_int(caml_string_length(v_buf)));
+       CAMLreturn(v_len);
     else
        CAMLreturn(Val_int(-1));
 }
