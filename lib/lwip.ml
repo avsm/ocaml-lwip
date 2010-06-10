@@ -88,6 +88,8 @@ end
 
 module TCP = struct
 
+    exception Connection_closed
+
     type pcb
     external tcp_new: unit -> pcb = "caml_tcp_new"
     external tcp_bind: pcb -> ipv4_addr -> int -> unit = "caml_tcp_bind"
@@ -170,13 +172,14 @@ module TCP = struct
          pcb
     
      let rec read pcb =
-         if tcp_read_len pcb > 0 then
-             return (tcp_read pcb) 
-         else (
+         match tcp_read_len pcb with
+         | -1 -> fail Connection_closed
+         |  0 -> 
              let state = tcp_get_state pcb in
-             Lwt_condition.wait state.rx_cond >>
+             lwt () = Lwt_condition.wait state.rx_cond in
+             print_endline "read woken up";
              read pcb
-          )
+         |  n -> return (tcp_read pcb)
 
      let rec internal_write pcb buf off len acc =
          let sndbuf = tcp_sndbuf pcb in

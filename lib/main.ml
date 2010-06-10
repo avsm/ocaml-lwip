@@ -28,11 +28,12 @@ let g () = Gc.compact()
 let process_connection pcb =
     print_endline "process_connection: start";
     let rec read_and_echo () = 
-       lwt buf = TCP.read pcb in
-       lwt wr = TCP.write pcb buf in
-       printf "wr=%d\n" wr;
-       print_endline "process_connection: waiting rx_cond";
-       read_and_echo ()
+       try_lwt
+           lwt buf = TCP.read pcb in
+           lwt wr = TCP.write pcb buf in
+           g ();
+           read_and_echo ()
+        with TCP.Connection_closed -> (print_endline "process_connection: closed"; return ())
     in
     read_and_echo ()
     

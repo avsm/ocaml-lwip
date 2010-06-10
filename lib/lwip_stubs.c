@@ -31,6 +31,7 @@
 #include <caml/alloc.h>
 #include <caml/custom.h>
 #include <caml/signals.h>
+#include <caml/callback.h>
 
 #include <stdio.h>
 
@@ -314,10 +315,7 @@ caml_tcp_read(value v_tw)
     unsigned char *s;
     fprintf(stderr, "caml_tcp_rx_read\n");
     if (!x) {
-        if (tw->desc->state == TCP_CLOSING)
-            v_str = caml_alloc_string(-1);
-        else
-            v_str = caml_alloc_string(0);
+        v_str = caml_alloc_string(0);
         CAMLreturn(v_str);
     }
     v_str = caml_alloc_string(p->tot_len);
@@ -339,8 +337,12 @@ caml_tcp_read_len(value v_tw)
     struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
     if (tw->desc->rx)
         CAMLreturn(Val_int(tw->desc->rx->tot_len));
-    else
-        CAMLreturn(Val_int(0));
+    else {
+        if (tw->desc->state == TCP_CLOSING)
+            CAMLreturn(Val_int(-1));
+        else
+            CAMLreturn(Val_int(0));
+    }
 }
 
 CAMLprim
