@@ -42,7 +42,6 @@ typedef struct tcp_desc {
    u8_t state;        /* TCP state */
    u8_t retries;      /* */
    struct pbuf *rx;   /* pbuf receive queue */
-   struct pbuf *tx;   /* pbuf transmit queue */
 } tcp_desc;
 
 typedef struct tcp_wrap {
@@ -63,7 +62,6 @@ tcp_wrap_alloc(struct tcp_pcb *pcb)
     tw->desc = caml_stat_alloc(sizeof(tcp_desc));
     tw->desc->state = TCP_NONE;
     tw->desc->rx = NULL;
-    tw->desc->tx = NULL;
     tw->desc->retries = 0;
     return tw;
 }
