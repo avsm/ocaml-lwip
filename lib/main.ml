@@ -30,6 +30,8 @@ let process_connection pcb =
     let rec read_and_echo () = 
        lwt buf = TCP.read pcb in
        lwt wr = TCP.write pcb buf in
+       printf "wr=%d\n" wr;
+       print_endline "process_connection: waiting rx_cond";
        read_and_echo ()
     in
     read_and_echo ()
