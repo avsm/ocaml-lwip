@@ -179,9 +179,8 @@ module TCP = struct
           )
 
      let rec internal_write pcb buf off len acc =
-         (* XXX tcp_sndbuf not working? *)
-         let sndbuf = len in
-         Printf.printf "iwrite: off=%d len=%d sndbuf=%d\n%!" off len sndbuf;
+         let sndbuf = tcp_sndbuf pcb in
+         Printf.printf "internal_write: off=%d len=%d sndbuf=%d\n%!" off len sndbuf;
          if len > sndbuf then (
              match tcp_write pcb buf off sndbuf with
              | -1 -> return acc
