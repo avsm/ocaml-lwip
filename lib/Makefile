@@ -9,7 +9,4 @@ LIBDIRS=../lib_test
 CLIBS=lwip4
 RESULT=echop
 
-#lwiplib.o: ncl
-#	ocamlopt -output-obj -o $@ -I +react react.cmx -I +lwt unix.cmxa lwt.cmxa lwt_unix.cmxa lwip.cmx main.cmx
-
 include $(OCAMLMAKEFILE)
