@@ -193,6 +193,7 @@ tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
         /* Wake up any listeners, which will get a read error once the
            pending receive queue has been handled by the application */
         v_unit = caml_callback(Field(tw->v, 0), Val_unit);
+        if (p) pbuf_free(p);
         ret_err = ERR_OK;
     } else {
         if (tw->desc->rx == NULL) {
