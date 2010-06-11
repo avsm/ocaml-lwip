@@ -112,8 +112,8 @@ pbuf_list_length(pbuf_list *pl)
 static tcp_wrap *
 tcp_wrap_alloc(struct tcp_pcb *pcb)
 {
-    fprintf(stderr, "tcp_wrap_alloc\n");
     tcp_wrap *tw = caml_stat_alloc(sizeof(tcp_wrap));
+    fprintf(stderr, "tcp_wrap_alloc\n");
     tw->pcb = pcb;
     tw->v = 0;
     tw->desc = caml_stat_alloc(sizeof(tcp_desc));
@@ -126,8 +126,8 @@ tcp_wrap_alloc(struct tcp_pcb *pcb)
 static void
 tcp_wrap_finalize(value v_tw)
 {
-    fprintf(stderr, "tcp_wrap_finalize\n");
     tcp_wrap *tw = Tcp_wrap_val(v_tw);
+    fprintf(stderr, "tcp_wrap_finalize\n");
     if (tw->pcb) {
         tcp_close(tw->pcb);
         tw->pcb = NULL;
@@ -139,14 +139,14 @@ tcp_wrap_finalize(value v_tw)
     free(tw);
 }
 
-CAMLprim
+CAMLprim value
 caml_tcp_new(value v_unit)
 {
     CAMLparam1(v_unit);
     CAMLlocal1(v_tw);
-    fprintf(stderr, "tcp_new\n");
     tcp_wrap *tw;
     struct tcp_pcb *pcb = tcp_new();
+    fprintf(stderr, "tcp_new\n");
     if (pcb == NULL)
         caml_failwith("tcp_new: unable to alloc pcb");
     v_tw = caml_alloc_final(2, tcp_wrap_finalize, 1, 100);
@@ -156,15 +156,15 @@ caml_tcp_new(value v_unit)
     CAMLreturn(v_tw);
 }
 
-CAMLprim
+CAMLprim value
 caml_tcp_bind(value v_tw, value v_ip, value v_port)
 {
     CAMLparam3(v_tw, v_ip, v_port);
     struct ip_addr ip;
     u16_t port = Int_val(v_port);
     err_t e;
-    fprintf(stderr, "cam_tcp_bind\n");
     tcp_wrap *tw = Tcp_wrap_val(v_tw);
+    fprintf(stderr, "cam_tcp_bind\n");
     IP4_ADDR(&ip, Int_val(Field(v_ip, 0)), Int_val(Field(v_ip, 1)), 
         Int_val(Field(v_ip, 2)), Int_val(Field(v_ip,3)));
     e = tcp_bind(tw->pcb, &ip, port);
@@ -216,6 +216,8 @@ tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 err_t
 tcp_sent_cb(void *arg, struct tcp_pcb *pcb, u16_t len)
 {
+    CAMLparam0();
+    CAMLlocal1(v_unit);
     tcp_wrap *tw = (tcp_wrap *)arg;
     err_t ret_err;
 
@@ -223,7 +225,6 @@ tcp_sent_cb(void *arg, struct tcp_pcb *pcb, u16_t len)
         fprintf(stderr, "tcp_sent_cb: ack len=%d\n", len);
         /* No error, so just notify the application that the send
            succeeded and wake up any blocked listeners */
-        value v_unit;
         v_unit = caml_callback(Field(tw->v, 1), Val_unit);
         ret_err = ERR_OK;
     } else {
@@ -231,12 +232,13 @@ tcp_sent_cb(void *arg, struct tcp_pcb *pcb, u16_t len)
         fprintf(stderr, "tcp_sent_cb: write error\n");
         ret_err = ERR_MEM;
     }
-    return ret_err;
+    CAMLreturnT(err_t, ret_err);
 }
 
 err_t 
 tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
 {
+    CAMLparam0();
     err_t ret_err;
     tcp_wrap *tw;
     value *cb = (value *)arg;
@@ -254,10 +256,11 @@ tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
     tcp_sent(newpcb, tcp_sent_cb);
 
     v_state = caml_callback(*cb, v_tw);
-    return ERR_OK;
+    ret_err = ERR_OK; /* TODO: use callback return to accept or reject */
+    CAMLreturnT(err_t, ret_err);
 }
 
-CAMLprim
+CAMLprim value
 caml_tcp_set_state(value v_tw, value v_arg)
 {
     CAMLparam2(v_tw, v_arg);
@@ -269,7 +272,7 @@ caml_tcp_set_state(value v_tw, value v_arg)
     CAMLreturn(Val_unit);
 }
 
-CAMLprim
+CAMLprim value
 caml_tcp_get_state(value v_tw)
 {
     CAMLparam1(v_tw);
@@ -279,13 +282,13 @@ caml_tcp_get_state(value v_tw)
     CAMLreturn(tw->v);
 }
 
-CAMLprim
+CAMLprim value
 caml_tcp_listen(value v_tw, value v_accept_cb)
 {
     CAMLparam2(v_tw, v_accept_cb);
-    fprintf(stderr, "caml_tcp_listen\n");
     tcp_wrap *tw = Tcp_wrap_val(v_tw);
     struct tcp_pcb *new_pcb;
+    fprintf(stderr, "caml_tcp_listen\n");
     new_pcb = tcp_listen(tw->pcb);
     if (new_pcb == NULL)
         caml_failwith("tcp_listen: unable to listen");
@@ -301,7 +304,7 @@ caml_tcp_listen(value v_tw, value v_accept_cb)
     CAMLreturn(Val_unit);
 }
 
-CAMLprim 
+CAMLprim value
 caml_tcp_accepted(value v_tw)
 {
     CAMLparam1(v_tw);
@@ -312,7 +315,7 @@ caml_tcp_accepted(value v_tw)
     CAMLreturn(Val_unit);
 }
 
-// NetIF support
+/* NetIF support */
 
 #define Netif_wrap_val(x) (*((struct netif **)(Data_custom_val(x))))
 static void
@@ -323,7 +326,7 @@ netif_finalize(value v_netif)
     free(netif);
 }
 
-CAMLprim
+CAMLprim value
 caml_netif_new(value v_ip, value v_netmask, value v_gw)
 {
     CAMLparam3(v_ip, v_netmask, v_gw);
@@ -350,13 +353,15 @@ caml_netif_new(value v_ip, value v_netmask, value v_gw)
 /* Copy out all the pbufs in a chain into a string, and ack/free pbuf 
  * @return 0: nothing, -1: closed connection, +n: bytes read
  */
-CAMLprim
+CAMLprim value
 caml_tcp_read(value v_tw)
 {
     CAMLparam1(v_tw);
     CAMLlocal1(v_str);
     struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
     struct pbuf_list *pl = tw->desc->rx;
+    unsigned int tot_len;
+    char *s;
 
     fprintf(stderr, "caml_tcp_rx_read\n");
     if (!pl) {
@@ -364,20 +369,20 @@ caml_tcp_read(value v_tw)
         CAMLreturn(v_str);
     }
 
-    unsigned int tot_len = pbuf_list_length(pl);
+    tot_len = pbuf_list_length(pl);
     v_str = caml_alloc_string(tot_len);
-    unsigned char *s = String_val(v_str);
+    s = String_val(v_str);
     do {
         pbuf_copy_partial(pl->p, s, pl->p->tot_len, 0);
         s += pl->p->tot_len;
-    } while (pl = pl->next);
+    } while ((pl = pl->next));
     tcp_recved(tw->pcb, tot_len);
     pbuf_list_free(tw->desc->rx);
     tw->desc->rx = NULL;
     CAMLreturn(v_str);   
 }
 
-CAMLprim
+CAMLprim value
 caml_tcp_read_len(value v_tw)
 {
     CAMLparam1(v_tw);
@@ -392,7 +397,7 @@ caml_tcp_read_len(value v_tw)
     }
 }
 
-CAMLprim
+CAMLprim value
 caml_tcp_recved(value v_tw, value v_len)
 {
     CAMLparam2(v_tw, v_len);
@@ -402,7 +407,7 @@ caml_tcp_recved(value v_tw, value v_len)
     CAMLreturn(Val_unit);
 }
 
-CAMLprim
+CAMLprim value
 caml_tcp_write(value v_tw, value v_buf, value v_off, value v_len)
 {
     CAMLparam4(v_tw, v_buf, v_off, v_len);
@@ -417,7 +422,7 @@ caml_tcp_write(value v_tw, value v_buf, value v_off, value v_len)
        CAMLreturn(Val_int(-1));
 }
 
-CAMLprim
+CAMLprim value
 caml_tcp_sndbuf(value v_tw)
 {
     CAMLparam1(v_tw);
@@ -425,9 +430,9 @@ caml_tcp_sndbuf(value v_tw)
     CAMLreturn(Val_int(tw->pcb->snd_buf));
 }
  
-// Netif
+/* Netif */
 
-CAMLprim
+CAMLprim value
 caml_netif_set_default(value v_netif)
 {
     CAMLparam1(v_netif);
@@ -436,7 +441,7 @@ caml_netif_set_default(value v_netif)
     CAMLreturn(Val_unit);
 }
 
-CAMLprim
+CAMLprim value
 caml_netif_set_up(value v_netif)
 {
     CAMLparam1(v_netif);
@@ -445,7 +450,7 @@ caml_netif_set_up(value v_netif)
     CAMLreturn(Val_unit);
 }
 
-CAMLprim
+CAMLprim value
 caml_netif_select(value v_netif)
 {
     CAMLparam1(v_netif);
@@ -453,9 +458,9 @@ caml_netif_select(value v_netif)
     CAMLreturn(Val_int(i));
 }
 
-// Timers
+/* Timers */
 
-CAMLprim
+CAMLprim value
 caml_timer_tcp(value v_unit)
 {
     CAMLparam1(v_unit);
@@ -463,7 +468,7 @@ caml_timer_tcp(value v_unit)
     CAMLreturn(Val_unit);
 }
 
-CAMLprim
+CAMLprim value
 caml_timer_ip_reass(value v_unit)
 {
     CAMLparam1(v_unit);
@@ -471,7 +476,7 @@ caml_timer_ip_reass(value v_unit)
     CAMLreturn(Val_unit);
 }
 
-CAMLprim
+CAMLprim value
 caml_timer_etharp(value v_unit)
 {
     CAMLparam1(v_unit);
@@ -479,9 +484,9 @@ caml_timer_etharp(value v_unit)
     CAMLreturn(Val_unit);
 }
 
-// LWIP core
+/* LWIP core */
 
-CAMLprim
+CAMLprim value
 caml_lwip_init(value v_unit)
 {
     CAMLparam1(v_unit);

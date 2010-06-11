@@ -7,6 +7,7 @@ PACKS=lwt lwt.unix lwt.syntax
 PREDS=camlp4o
 LIBDIRS=../lib_test
 CLIBS=lwip4
+CFLAGS=-Wall -pedantic
 RESULT=echop
 
 include $(OCAMLMAKEFILE)
