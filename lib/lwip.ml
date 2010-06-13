@@ -89,6 +89,7 @@ end
 module TCP = struct
 
     exception Connection_closed
+    let _ = Callback.register "TCP.Connection_closed" Connection_closed
 
     type pcb
     external tcp_new: unit -> pcb = "caml_tcp_new"
@@ -102,6 +103,8 @@ module TCP = struct
     external tcp_read_len: pcb -> int = "caml_tcp_read_len"
     external tcp_write: pcb -> string -> int -> int -> int = "caml_tcp_write"
     external tcp_sndbuf: pcb -> int = "caml_tcp_sndbuf"
+    external tcp_close: pcb -> bool = "caml_tcp_close"
+    external tcp_abort: pcb -> unit = "caml_tcp_abort"
 
     (** State descriptor for a single TCP connection.
         Has condition variables which are notified when events
@@ -199,5 +202,17 @@ module TCP = struct
         
      let write pcb buf = 
          internal_write pcb buf 0 (String.length buf) 0
-        
+       
+     let close pcb =
+         let rec fn = function
+         | 0 -> 
+             return (tcp_abort pcb)
+         | n -> 
+             if tcp_close pcb then
+                 return ()
+             else (
+                 lwt () = Lwt.pause () in
+                 fn (n-1)
+             ) in
+         fn 3
 end

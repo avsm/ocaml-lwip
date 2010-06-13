@@ -47,4 +47,10 @@ module TCP : sig
     val bind : ipv4_addr -> int -> pcb
     val read : pcb -> string Lwt.t
     val write : pcb -> string -> int Lwt.t
+
+    (** close TCP connection and invalidate the PCB. Any subsequent
+        attempt to use the PCB will raise a Connection_closed exception.
+        Will retry the close 3 times automatically, and abort the connection
+        if all the attempts fail. *)
+    val close : pcb -> unit Lwt.t 
   end

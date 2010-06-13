@@ -75,6 +75,8 @@ typedef struct tcp_wrap {
 
 #define Tcp_wrap_val(x) (*((tcp_wrap **)(Data_custom_val(x))))
 
+static value *Lwip_Connection_closed = NULL;
+
 static pbuf_list *
 pbuf_list_alloc(struct pbuf *p)
 {
@@ -137,14 +139,29 @@ tcp_wrap_finalize(value v_tw)
     tcp_wrap *tw = Tcp_wrap_val(v_tw);
     LWIP_STUB_DPRINTF("tcp_wrap_finalize");
     if (tw->pcb) {
-        tcp_close(tw->pcb);
+        if (tcp_close(tw->pcb) != ERR_OK)
+            tcp_abort(tw->pcb);
         tw->pcb = NULL;
     }
+    if (tw->desc->rx)
+        pbuf_list_free(tw->desc->rx);
     if (tw->desc)
         free(tw->desc);
     if (tw->v)
         caml_remove_generational_global_root(&tw->v);
     free(tw);
+}
+
+static inline tcp_wrap *
+tcp_wrap_of_value(value v_tw)
+{
+    struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
+    if (tw->pcb == NULL) {
+        LWIP_STUB_DPRINTF("tcp_wrap_finalize: CLOSED");
+        caml_raise(*Lwip_Connection_closed);
+    }
+    LWIP_STUB_DPRINTF("tcp_wrap_finalize: ok");
+    return tw;
 }
 
 CAMLprim value
@@ -171,7 +188,7 @@ caml_tcp_bind(value v_tw, value v_ip, value v_port)
     struct ip_addr ip;
     u16_t port = Int_val(v_port);
     err_t e;
-    tcp_wrap *tw = Tcp_wrap_val(v_tw);
+    tcp_wrap *tw = tcp_wrap_of_value(v_tw);
     LWIP_STUB_DPRINTF("cam_tcp_bind");
     IP4_ADDR(&ip, Int_val(Field(v_ip, 0)), Int_val(Field(v_ip, 1)), 
         Int_val(Field(v_ip, 2)), Int_val(Field(v_ip,3)));
@@ -273,7 +290,7 @@ CAMLprim value
 caml_tcp_set_state(value v_tw, value v_arg)
 {
     CAMLparam2(v_tw, v_arg);
-    struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
+    tcp_wrap *tw = tcp_wrap_of_value(v_tw);
     if (tw->v)
         failwith("caml_tcp_set_state: cannot change tw->v");
     tw->v = v_arg;
@@ -285,7 +302,7 @@ CAMLprim value
 caml_tcp_get_state(value v_tw)
 {
     CAMLparam1(v_tw);
-    struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
+    tcp_wrap *tw = tcp_wrap_of_value(v_tw);
     if (!tw->v)
         failwith("caml_tcp_get_state: null\n");
     CAMLreturn(tw->v);
@@ -295,7 +312,7 @@ CAMLprim value
 caml_tcp_listen(value v_tw, value v_accept_cb)
 {
     CAMLparam2(v_tw, v_accept_cb);
-    tcp_wrap *tw = Tcp_wrap_val(v_tw);
+    tcp_wrap *tw = tcp_wrap_of_value(v_tw);
     struct tcp_pcb *new_pcb;
     LWIP_STUB_DPRINTF("caml_tcp_listen");
     new_pcb = tcp_listen(tw->pcb);
@@ -315,7 +332,7 @@ CAMLprim value
 caml_tcp_accepted(value v_tw)
 {
     CAMLparam1(v_tw);
-    struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
+    tcp_wrap *tw = tcp_wrap_of_value(v_tw);
     LWIP_STUB_DPRINTF("caml_tcp_accepted");
     tw->desc->state = TCP_ACCEPTED;
     tcp_accepted(tw->pcb);
@@ -357,7 +374,7 @@ caml_netif_new(value v_ip, value v_netmask, value v_gw)
     CAMLreturn(v_netif);
 }
 
-/* Copy out all the pbufs in a chain into a string, and ack/free pbuf 
+/* Copy out all the pbufs in a chain into a string, and ack/free pbuf.
  * @return 0: nothing, -1: closed connection, +n: bytes read
  */
 CAMLprim value
@@ -365,7 +382,10 @@ caml_tcp_read(value v_tw)
 {
     CAMLparam1(v_tw);
     CAMLlocal1(v_str);
-    struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
+    /* Not using tcp_wrap_of_value as we need to clear out the remaining
+       RX queue before raising the Connection_closed exception. Check that
+       tw->pcb is set for the rest of the function before using it. */
+    tcp_wrap *tw = Tcp_wrap_val(v_tw);
     struct pbuf_list *pl = tw->desc->rx;
     unsigned int tot_len;
     char *s;
@@ -383,7 +403,8 @@ caml_tcp_read(value v_tw)
         pbuf_copy_partial(pl->p, s, pl->p->tot_len, 0);
         s += pl->p->tot_len;
     } while ((pl = pl->next));
-    tcp_recved(tw->pcb, tot_len);
+    if (tw->pcb)
+        tcp_recved(tw->pcb, tot_len);
     pbuf_list_free(tw->desc->rx);
     tw->desc->rx = NULL;
     CAMLreturn(v_str);   
@@ -393,7 +414,7 @@ CAMLprim value
 caml_tcp_read_len(value v_tw)
 {
     CAMLparam1(v_tw);
-    struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
+    tcp_wrap *tw = tcp_wrap_of_value(v_tw);
     if (tw->desc->rx)
         CAMLreturn(Val_int(pbuf_list_length(tw->desc->rx)));
     else {
@@ -408,7 +429,7 @@ CAMLprim value
 caml_tcp_recved(value v_tw, value v_len)
 {
     CAMLparam2(v_tw, v_len);
-    struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
+    tcp_wrap *tw = tcp_wrap_of_value(v_tw);
     LWIP_STUB_DPRINTF1("caml_tcp_recved: %d", Int_val(v_len));
     tcp_recved(tw->pcb, Int_val(v_len));
     CAMLreturn(Val_unit);
@@ -418,7 +439,7 @@ CAMLprim value
 caml_tcp_write(value v_tw, value v_buf, value v_off, value v_len)
 {
     CAMLparam4(v_tw, v_buf, v_off, v_len);
-    struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
+    tcp_wrap *tw = tcp_wrap_of_value(v_tw);
     err_t err;
     /* XXX no bounds checks on off, len */
     err = tcp_write(tw->pcb, String_val(v_buf)+Int_val(v_off), Int_val(v_len), 1);
@@ -433,10 +454,36 @@ CAMLprim value
 caml_tcp_sndbuf(value v_tw)
 {
     CAMLparam1(v_tw);
-    struct tcp_wrap *tw = Tcp_wrap_val(v_tw);
+    tcp_wrap *tw = tcp_wrap_of_value(v_tw);
     CAMLreturn(Val_int(tw->pcb->snd_buf));
 }
- 
+
+CAMLprim value
+caml_tcp_close(value v_tw)
+{
+    CAMLparam1(v_tw);
+    tcp_wrap *tw = tcp_wrap_of_value(v_tw);
+    err_t ret;
+    ret = tcp_close(tw->pcb);
+    if (ret == ERR_OK) {
+        tw->pcb = NULL;
+        tw->desc->state = TCP_CLOSING;
+        CAMLreturn(Val_bool(1));
+    }
+    CAMLreturn(Val_bool(0));
+}
+
+CAMLprim value
+caml_tcp_abort(value v_tw)
+{
+    CAMLparam1(v_tw);
+    tcp_wrap *tw = tcp_wrap_of_value(v_tw);
+    tcp_abort(tw->pcb);
+    tw->pcb = NULL;
+    tw->desc->state = TCP_CLOSING;
+    CAMLreturn(Val_unit);
+}
+
 /* Netif */
 
 CAMLprim value
@@ -495,6 +542,7 @@ CAMLprim value
 caml_lwip_init(value v_unit)
 {
     CAMLparam1(v_unit);
+    Lwip_Connection_closed = caml_named_value("TCP.Connection_closed");
     lwip_init ();
     CAMLreturn(Val_unit);
 }
