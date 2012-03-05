@@ -10,14 +10,14 @@ Works on:
 To use it:
 
 $ make all
-$ sudo make test
+$ sudo make echo
 
-This sets up a listening echo server on 192.168.0.2 7
+This sets up a listening echo server on 192.168.10.2 7
 
-$ telnet 192.168.0.2 7
+$ telnet 192.168.10.2 7
 <type stuff in>
 
-$ nc -q 3 192.168.0.2 7 < Makefile
+$ nc -q 3 192.168.10.2 7 < Makefile
 
 ...and you should see the Makefile echoed back to you.
 The echo server is defined in lib/main.ml

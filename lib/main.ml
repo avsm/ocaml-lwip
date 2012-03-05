@@ -19,9 +19,9 @@ open Lwt_unix
 open Lwip
 open Printf
 
-let host_ip = ( 192, 168, 0, 2 )
+let host_ip = ( 192, 168, 10, 2 )
 let host_netmask = ( 255, 255, 255, 0 )
-let host_gw = ( 192, 168, 0, 1 )
+let host_gw = ( 192, 168, 10, 1 )
 
 let g () = Gc.compact()
 
